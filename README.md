@@ -97,6 +97,11 @@ contain another plugin, so install both:
 
 Any standard method works:
 
+- **Dashboard (ZIP upload):** download **`objectfs_cdn.zip`** from the
+  [Releases](https://github.com/rahadiangg/moodle-local_objectfs_cdn/releases) page —
+  use that asset, **not** GitHub's auto-generated *Source code* zip (its top folder is
+  named after the repo, which Moodle's installer rejects). Then *Site administration →
+  Plugins → Install plugins* → upload it.
 - **Copy the folder** into `local/objectfs_cdn/` of your Moodle/Iomad tree, then
   visit *Site administration → Notifications* to run the upgrade.
 - **Git:** `git clone https://github.com/rahadiangg/moodle-local_objectfs_cdn.git local/objectfs_cdn`
