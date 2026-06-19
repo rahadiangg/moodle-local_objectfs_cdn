@@ -1,0 +1,74 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Moodle 4.5 LTS — the only supported core (ObjectFS pin is MOODLE_404_STABLE).
+          - php: '8.2'
+            moodle-branch: 'MOODLE_405_STABLE'
+
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pgsql, zip, gd, intl, soap, mbstring, curl, xml
+          ini-values: max_input_vars=5000
+          coverage: none
+
+      - name: Initialise moodle-plugin-ci
+        run: |
+          composer create-project -n --no-dev --prefer-dist moodlehq/moodle-plugin-ci ci ^4
+          echo "$(pwd)/ci/bin" >> "$GITHUB_PATH"
+          echo "$(pwd)/ci/vendor/bin" >> "$GITHUB_PATH"
+
+      - name: Add hard dependencies (AWS SDK + ObjectFS)
+        run: |
+          # Order matters: local_aws (SDK) before tool_objectfs which depends on it.
+          moodle-plugin-ci add-plugin --branch master catalyst/moodle-local_aws
+          moodle-plugin-ci add-plugin --branch MOODLE_404_STABLE catalyst/moodle-tool_objectfs
+
+      - name: Install Moodle + plugin
+        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1
+        env:
+          DB: pgsql
+          MOODLE_BRANCH: ${{ matrix.moodle-branch }}
+
+      - name: PHP Lint
+        if: ${{ always() }}
+        run: moodle-plugin-ci phplint
+
+      - name: PHPUnit (incl. ObjectFS API-drift guard)
+        if: ${{ always() }}
+        run: moodle-plugin-ci phpunit
+
+  # Iomad 4.5 is verified locally via `bash scripts/test.sh iomad` (moodle-plugin-ci
+  # targets upstream Moodle, not the Iomad distribution). The PHPUnit suite is
+  # distribution-agnostic; the Iomad run additionally proves install/registration
+  # on the Iomad codebase. See scripts/Dockerfile.test.

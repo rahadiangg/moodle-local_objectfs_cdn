@@ -1,0 +1,40 @@
+# Throwaway test image for local_objectfs_cdn — NOT for production.
+# Builds Moodle (or Iomad) 4.5 + tool_objectfs + local_aws + this plugin + PHPUnit.
+#
+# Default base is the same Moodle 4.5 runtime the plugin targets. For Iomad, pass
+# IOMAD_REPO/IOMAD_BRANCH and the Moodle core is swapped for the Iomad checkout,
+# reusing the base image's PHP runtime + extensions.
+ARG BASE=erseco/alpine-moodle:v4.5.11
+FROM ${BASE}
+USER root
+ARG WWW=/var/www/html
+ARG OBJECTFS_BRANCH=MOODLE_404_STABLE
+ARG LOCALAWS_BRANCH=master
+ARG IOMAD_REPO=
+ARG IOMAD_BRANCH=
+
+RUN apk add --no-cache composer git postgresql-client
+
+# Iomad: replace the base image's Moodle core with the Iomad checkout.
+RUN if [ -n "${IOMAD_REPO}" ]; then \
+      echo "Swapping Moodle core for Iomad ${IOMAD_BRANCH}"; \
+      find "${WWW}" -mindepth 1 -delete; \
+      git clone --depth 1 --branch "${IOMAD_BRANCH}" "${IOMAD_REPO}" "${WWW}"; \
+      rm -rf "${WWW}/.git"; \
+    fi
+
+# ObjectFS + its AWS SDK — hard dependencies of the plugin under test.
+RUN git clone --depth 1 --branch "${OBJECTFS_BRANCH}" \
+      https://github.com/catalyst/moodle-tool_objectfs.git "${WWW}/admin/tool/objectfs" \
+ && rm -rf "${WWW}/admin/tool/objectfs/.git"
+RUN git clone --depth 1 --branch "${LOCALAWS_BRANCH}" \
+      https://github.com/catalyst/moodle-local_aws.git "${WWW}/local/aws" \
+ && rm -rf "${WWW}/local/aws/.git"
+
+# The plugin under test.
+COPY . "${WWW}/local/objectfs_cdn/"
+RUN rm -rf "${WWW}/local/objectfs_cdn/.git"
+
+# PHPUnit + Moodle dev dependencies.
+RUN cd "${WWW}" && composer install --no-interaction --no-progress
+RUN chown -R nobody:nobody "${WWW}" || true

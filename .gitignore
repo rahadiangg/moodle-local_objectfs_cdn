@@ -1,0 +1,8 @@
+/vendor/
+/ci/
+/moodle/
+/moodledata/
+*.log
+.DS_Store
+.idea/
+.vscode/
