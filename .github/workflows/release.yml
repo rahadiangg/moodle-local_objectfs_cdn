@@ -1,0 +1,64 @@
+name: release
+
+# Builds the dashboard-installable ZIP (single root folder `objectfs_cdn/`, which is
+# what Moodle's "Install plugin from ZIP" requires) and attaches it to the GitHub
+# Release. GitHub's auto-generated "Source code" zip is NOT installable (its root
+# folder is named after the repo+ref), so we publish our own asset.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build and attach the ZIP to, e.g. v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write          # create releases + upload assets via the default GITHUB_TOKEN
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Guard — tag must match $plugin->release
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.ref }}"
+          ver="${tag#v}"
+          rel="$(grep -E 'release' version.php | grep -oE "'[0-9][^']*'" | head -1 | tr -d "'")"
+          if [ "$ver" != "$rel" ]; then
+            echo "::error::Tag '$tag' (=> '$ver') does not match \$plugin->release '$rel' in version.php"
+            exit 1
+          fi
+          echo "OK: tag '$tag' matches \$plugin->release '$rel'"
+
+      - name: Build dashboard ZIP
+        run: bash scripts/package.sh
+
+      - name: Attach objectfs_cdn.zip to the Release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.ref }}"
+          # Create the Release if it doesn't exist yet; no-op if it already does.
+          gh release view "$tag" >/dev/null 2>&1 || \
+            gh release create "$tag" --title "$tag" \
+              --notes "Dashboard-installable plugin ZIP. Download **objectfs_cdn.zip** (not the auto-generated *Source code* zip). Install \`tool_objectfs\` first — it is a hard dependency Moodle enforces."
+          gh release upload "$tag" dist/objectfs_cdn.zip --clobber
