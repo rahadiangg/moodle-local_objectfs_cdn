@@ -42,6 +42,11 @@ jobs:
           ini-values: max_input_vars=5000
           coverage: none
 
+      - name: Install required locale (Moodle PHPUnit needs en_AU.UTF-8)
+        run: |
+          sudo locale-gen en_AU.UTF-8
+          sudo update-locale
+
       - name: Initialise moodle-plugin-ci
         run: |
           composer create-project -n --no-dev --prefer-dist moodlehq/moodle-plugin-ci ci ^4
